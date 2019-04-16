@@ -1,6 +1,6 @@
-# Author: John LaMontagne
-# contact@johnlamontagne.me
-# Date: 3/26/2019
+# Author: John LaMontagne, Associate Researcher.
+# jlamontagne@ufcw.org
+# Date: 11/19/2018
 
 import urllib.request
 import requests
@@ -15,7 +15,7 @@ from datetime import datetime
 from dateutil.parser import *
 
 
-def removeDisallowedFilenameChars(filename):
+def remove_disallowed_chars(filename):
     return re.sub('[^\w_.)( -]', '', filename)
 
 class SECNinja:
@@ -27,17 +27,21 @@ class SECNinja:
            'Accept-Language': 'en-US,en;q=0.8',
            'Connection': 'keep-alive'}
 
-    excluded_forms = []
-
-    def __init__(self, cik, working_dir, excluded_forms, maxdate):
+    def __init__(self, cik, working_dir, excluded_forms, included_forms, enddate, startdate):
         self.cik = cik
         self.working_dir = working_dir
         self.excluded_forms = excluded_forms
+        self.included_forms = included_forms
 
-        if (maxdate is not None):
-            self.maxdate = parse(maxdate, default=datetime(2019, 1, 1))
+        if enddate is not None:
+            self.enddate = parse(enddate, default=datetime(2019, 1, 1))
         else:
-            self.maxdate = None
+            self.enddate = None
+
+        if startdate is not None:
+            self.startdate = parse(startdate, default=datetime(2001, 1, 1))
+        else:
+            self.startdate = None
 
         self.offset = 0
         self.sec_base_url = "https://www.sec.gov"
@@ -47,7 +51,6 @@ class SECNinja:
     def init_dirs(self):
         self.root_path = os.path.join(self.working_dir, self.cik, "SEC")
         self.exhibits_path = os.path.join(self.root_path, "Exhibits")
-
 
         if not os.path.exists(self.root_path):
             try:
@@ -66,13 +69,13 @@ class SECNinja:
     def save_doc(self, doc_type, doc_url, filing_date, parent = None):
         extension = os.path.splitext(doc_url)[1]
 
-        if ('html' in extension or 'htm' in extension):
+        if 'html' in extension or 'htm' in extension:
             # Save exhibits in their desginated folder.
             if ("EX" in doc_type):
                 pdfkit.from_url(doc_url, os.path.join(self.exhibits_path, filing_date + ' Form ' + parent + ' ' + doc_type + '.pdf'), configuration=self.pdfconfig)
             else:
                 pdfkit.from_url(doc_url, os.path.join(self.root_path, filing_date + ' Form ' + doc_type + '.pdf'), configuration=self.pdfconfig)
-        elif ('pdf' in extension or 'txt' in extension):
+        elif 'pdf' in extension or 'txt' in extension or 'xml' in extension:
             req = requests.get(doc_url, headers=self.hdr)
 
             if ("EX" in doc_type):
@@ -112,14 +115,14 @@ class SECNinja:
             # This should always be None the first time around, and the first document we parse
             # should always be the standard.... hopefully
             if (parent is None):
-                parent = removeDisallowedFilenameChars(doc_type)
+                parent = remove_disallowed_chars(doc_type)
 
             # ignore the garbage
             if (not doc_type or not doc_desc or 'GRAPHIC' in doc_type or 'submission text file' in doc_desc):
                 continue
 
-            print("Grabbing " + doc_desc)
-            self.save_doc(removeDisallowedFilenameChars(doc_type), doc_url, filing_date, parent)
+            print("Grabbing form " + doc_type + ": " + doc_url)
+            self.save_doc(remove_disallowed_chars(doc_type), doc_url, filing_date, parent)
 
         print('---- END OF FILING ----')
 
@@ -146,17 +149,26 @@ class SECNinja:
             columns = row.findChildren('td')
             filing_type = columns[0].text
 
+            # if include-forms was specified, we will only be downloading docs specified explicitly
+            if self.included_forms and not any(True for form in self.included_forms if form.strip() == filing_type.strip()):
+                print("Ignoring {} as it is not an explicitly included form.".format(filing_type))
+                continue
+
             # ignore excluded forms.
-            if (any(True for form in self.excluded_forms if form.strip() == filing_type.strip())):
+            elif any(True for form in self.excluded_forms if form.strip() == filing_type.strip()):
                 print("Ignoring {} as an excluded form.".format(filing_type))
                 continue
 
-            # ignore forms dated prior to our furthest look-back.
+            # ignore forms dated outside of our date-range.
             date = datetime.strptime(columns[3].text.strip(), "%Y-%m-%d")
-            if (self.maxdate is not None and date < self.maxdate):
-                print("Filing was made prior to {}: ignoring...".format(self.maxdate))
+
+            if self.startdate is not None and date > self.startdate:
+                print("Filing was made after {}: ignoring...".format(self.startdate))
                 continue
 
+            if self.enddate is not None and date < self.enddate:
+                print("Filing was made prior to {}: ignoring...".format(self.enddate))
+                continue
 
             filing_link = columns[1].find('a', attrs={'id': 'documentsbutton'})['href']
             self.grab_filing_docs(filing_link)
@@ -178,16 +190,25 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-t', '--ticker',
                         help='Stock ticker for the target company.')
-    parser.add_argument('-d', '--directory', default='/',
+    parser.add_argument('-d', '--directory', default='./',
                         help='Directory in which to output files.')
     parser.add_argument('-e', '--exclude', help='Filing types to be excluded (e.g., "S-4"), seperated by commas if multiple.', default='')
-    parser.add_argument('--maxdate', help='Furthest date from which to pull filings (i.e., 2014, 2-3-2014, etc.)', default=None)
+    parser.add_argument('-i', '--include', help='Filing types to be explicitly included. Utilizing this paramater will result in any form not specified being ignored for download.')
+    parser.add_argument('--enddate', help='Furthest date from which to pull filings (furthest from the present)', default=None)
+    parser.add_argument('--startdate', help='Soonest date from which to pull filings (closest to the present)', default=None)
+
     args = parser.parse_args()
 
-    if (not args.exclude):
-        grabber = SECNinja(args.ticker, args.directory, [], args.maxdate)
+    if not args.ticker:
+        raise Exception('Ticket not specified!')
+
+    if args.include:
+        grabber = SECNinja(args.ticker, args.directory, [], args.include.split(','), args.enddate, args.startdate)
     else:
-        grabber = SECNinja(args.ticker, args.directory, args.exclude.split(','), args.maxdate)
+        if not args.exclude:
+            grabber = SECNinja(args.ticker, args.directory, [], [], args.enddate, args.startdate)
+        else:
+            grabber = SECNinja(args.ticker, args.directory, args.exclude.split(','), [], args.enddate, args.startdate)
 
     grabber.begin_scraping()
 
