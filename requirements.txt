@@ -1,0 +1,4 @@
+pdfkit
+beautifulsoup4
+requests
+python-dateutil
