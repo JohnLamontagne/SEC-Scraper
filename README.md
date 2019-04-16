@@ -7,6 +7,8 @@ Straight-forward automated scraping program to gather corporate filings from the
 # Dependencies
 - [pdfkit](https://pypi.org/project/pdfkit/)
 - [BeautifulSoup](https://pypi.org/project/beautifulsoup4/)
+- [dateutil](https://pypi.org/project/python-dateutil/)
+- [requests](https://pypi.org/project/requests/)
 
 # Installation
 **Git:**
