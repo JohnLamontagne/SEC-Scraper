@@ -15,9 +15,8 @@ Straight-forward automated scraping program to gather corporate filings from the
 ```
 git clone https://github.com/JohnLamontagne/SEC-Scraper.git
 pip3 install -r requirements.txt
-
-Intall [wkhtmltopdf](https://wkhtmltopdf.org/)
 ```
+Intall [wkhtmltopdf](https://wkhtmltopdf.org/)
 
 # Usage
 ```
