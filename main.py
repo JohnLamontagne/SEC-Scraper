@@ -200,7 +200,7 @@ def main():
     args = parser.parse_args()
 
     if not args.ticker:
-        raise Exception('Ticket not specified!')
+        raise Exception('Ticker not specified!')
 
     if args.include:
         grabber = SECNinja(args.ticker, args.directory, [], args.include.split(','), args.enddate, args.startdate)
